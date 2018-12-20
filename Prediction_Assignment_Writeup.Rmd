@@ -1,0 +1,194 @@
+---
+title: 'Prediction: Weight Lifting Exercises Dataset'
+author: "Pablo Villamichel"
+date: "10/19/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(caret)
+library(e1071)
+```
+
+#Summary
+
+The goal of this report is to use the data from the Weight Lifting Exercise Dataset (http://groupware.les.inf.puc-rio.br/har) and predict the manner if an excercise is done. The data was obtained from accelerometers on the belt, forearm, arm, and dumbell of 6 participants, that were asked to perform barbell lifts correctly and incorrectly in 5 different ways.
+
+After modeling with three different types of models: tree, lda and random forest, the best fit and predicting power was obtained with the random forest model that has a 98% accuracy.
+
+this report describes: 
+I.	how the model was built, 
+II.	how cross validation was used, 
+III.	what is the expected out of sample error, and 
+IV.	what was the rationale for the decisions in the analysis. 
+
+The model will be used to predict 20 different test cases and this way determine the goodness of fit of the model
+
+
+# The Data
+
+## Loading the data
+        
+```{r loading data, cache=TRUE}
+training <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"), na.strings = c("", "NA", "#DIV/0!"))
+
+test <- read.csv(url("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"), na.strings = c("", "NA", "#DIV/0!"))
+
+```
+
+## Cleaning up the data
+
+Training and test data contains columns with statistical indicators such as mean, deviation, skewness,and kurtosis for different windows that are not helpful for prediction and for this reasosn this are eliminated.
+
+```{r Clean-up, cache=TRUE}
+num_NAs<-sapply(training, function(x) sum(is.na(x)))
+no_NAs<-names(num_NAs[num_NAs==0])
+
+training <- training[, no_NAs]
+training <- training[, -c(1:7)]
+
+test <- test[, no_NAs[1:59]]
+test <- test[, -c(1:7)]
+
+dim(training); dim(test)
+```
+
+The test set has one less column which is the variable that is being modeled for prediction. In this case: "classe".
+
+# The Model
+
+The model will seek to identify between 5 differen "classes" in the data:
+
+```{r classes, echo=FALSE}
+summary(training$classe)
+```
+
+This is a discrete selection, that can be better addressed by using tree-based models with recursive partitioning (rpart), linear discriminant analysis (lda) and random forest (rf). In order to apply and cross validate the results. The different models will be trained over 10 folds.
+
+```{r folds, cache=TRUE}
+
+set.seed(131273)
+
+inTrain <- createDataPartition(y=training$classe, p=0.99, list=FALSE)
+training_train <- training[inTrain,]
+training_test <- training[-inTrain,]
+
+folds_train <- createFolds(y=training_train$classe,k=10,list=TRUE,returnTrain=FALSE)
+folds_test <- createFolds(y=training_test$classe,k=10,list=TRUE,returnTrain=FALSE)
+```
+
+## Recursive partitioning model (rpart)
+
+```{r rpart, cache=TRUE}
+
+rpart_model <- train(classe ~ .,data=training_train,method="rpart")
+rpart_training_accuracy <- sum(diag(confusionMatrix( rpart_model )[[1]]))/100
+rpart_testing_error<-(1-(sum(predict(rpart_model,newdata=training_test)==training_test$classe) / nrow(training_test) ) )
+
+```
+
+The rpart model applied over the complete training set has an accuracy of `r paste(round(rpart_training_accuracy,4)*100,"%", sep="")` and a training error of `r paste(round(rpart_testing_error,4)*100,"%", sep="")`, which is no better than a coin toss.
+
+### Cross-Validation Recursive partitioning model (rpart)
+
+```{r rpart_kfolds, cache=TRUE}
+
+rpart_folds_results <- data.frame(training_accuracy=NA, test_error=NA)
+
+for (i in 1:10) {
+rpart_model <- train(classe ~ .,data=training_train[folds_train[[i]],],method="rpart")
+rpart_folds_results[i,1]<-sum(diag(confusionMatrix( rpart_model )[[1]]))/100
+rpart_folds_results[i,2]<-(1-(sum(predict(rpart_model,newdata=training_test[folds_test[[i]],])==training_test$classe[folds_test[[i]]]) / nrow(training_test[folds_test[[i]],]) ) )
+}
+
+print(rpart_folds_results)
+
+```
+
+
+The rpart model evaluated over a 10 fold of the training set shows an average accuracy of  `r paste(round(mean(rpart_folds_results[,1]),4)*100,"%", sep="")` and an average error of `r paste(round(mean(rpart_folds_results[,2]),4)*100,"%", sep="")` that reflects the poor predictive capacity of the model.
+
+## Linear discriminant analysis model (lda)
+
+```{r lda, cache=TRUE}
+
+lda_model <- train(classe ~ .,data=training_train,method="lda")
+lda_training_accuracy <- sum(diag(confusionMatrix( lda_model )[[1]]))/100
+lda_testing_error<-(1-(sum(predict(lda_model,newdata=training_test)==training_test$classe) / nrow(training_test) ) )
+
+```
+
+The rpart model applied over the complete training set has an accuracy of `r paste(round(lda_training_accuracy,4)*100,"%", sep="")` and a testing error of `r paste(round(lda_testing_error,4)*100,"%", sep="")`.
+
+
+### Cross-Validation Linear discriminant analysis model (lda)
+
+```{r lda_kfolds, cache=TRUE}
+
+lda_folds_results <- data.frame(training_accuracy=NA, test_error=NA)
+
+for (i in 1:10) {
+lda_model <- train(classe ~ .,data=training_train[folds_train[[i]],],method="lda")
+lda_folds_results[i,1]<-sum(diag(confusionMatrix( lda_model )[[1]]))/100
+lda_folds_results[i,2]<-(1-(sum(predict(lda_model,newdata=training_test[folds_test[[i]],])==training_test$classe[folds_test[[i]]]) / nrow(training_test[folds_test[[i]],]) ) )
+
+}
+
+print(lda_folds_results)
+
+```
+
+The rpart model evaluated over a 10 fold of the traing set shows an average accuracy of  `r paste(round(mean(lda_folds_results[,1]),4)*100,"%", sep="")` and an average error of `r paste(round(mean(lda_folds_results[,2]),4)*100,"%", sep="")` that is still showns poor predictive capacity of the model.
+
+## Random forest model (rf)
+
+```{r rf, cache=TRUE}
+
+rf_model_f <- train(classe ~ .,data=training_train,method="rf", ntree=5)
+rf_training_accuracy <- sum(diag(confusionMatrix( rf_model_f )[[1]]))/100
+rf_testing_error<-(1-(sum(predict(rf_model_f,newdata=training_test)==training_test$classe) / nrow(training_test) ) )
+
+```
+
+The rpart model applied over the complete training set has an accuracy of `r paste(round(rf_training_accuracy,4)*100,"%", sep="")` and a testing error of `r paste(round(rf_testing_error,4)*100,"%", sep="")`. This is a significant improvement over the prior model specifications.
+
+
+### Cross-Validation Random forest model (rf)
+
+```{r rf_kfolds, cache=TRUE}
+
+rf_folds_results <- data.frame(training_accuracy=NA, test_error=NA)
+
+for (i in 1:10) {
+rf_model <- train(classe ~ .,data=training_train[folds_train[[i]],],method="rf", ntree=5)
+
+rf_folds_results[i,1]<-sum(diag(confusionMatrix( rf_model )[[1]]))/100
+rf_folds_results[i,2]<-(1-(sum(predict(rf_model,newdata=training_test[folds_test[[i]],])==training_test$classe[folds_test[[i]]]) / nrow(training_test[folds_test[[i]],]) ) )
+}
+
+print(rf_folds_results)
+
+```
+
+
+The rpart model evaluated over a 10 fold of the training set shows an average accuracy of  `r paste(round(mean(rf_folds_results[,1]),4)*100,"%", sep="")` and an average error of `r paste(round(mean(rf_folds_results[,2]),4)*100,"%", sep="")`. It is not as accurate as the results over the whole set, but still a significant inmprovement over other models considered.
+
+## Model Selection
+
+Taking in to consideration the testing error as well as the accuracy, the best fit is provided by the rf model. This is expected has an estimated error of 4.5%.
+
+```{r Model Selection, cache=TRUE}
+
+print(rf_model_f$finalModel)
+
+```
+
+
+# Test
+
+```{r test rf, cache=TRUE}
+
+predict(rf_model_f,newdata=test)
+
+```
